@@ -1,44 +1,55 @@
-import React, { useRef, useEffect } from 'react';
-import * as THREE from 'three';
+import React, { useRef, useState } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { OrbitControls } from '@react-three/drei';
 import './App.css';
 
-function App() {
-  const mountRef = useRef(null);
+function RandomColorCube() {
+  const meshRef = useRef();
+  const [color, setColor] = useState([Math.random(), Math.random(), Math.random()]);
 
-  useEffect(() => {
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    mountRef.current.appendChild(renderer.domElement);
+  useFrame(() => {
+    if (meshRef.current) {
+      meshRef.current.rotation.x += 0.01;
+      meshRef.current.rotation.y += 0.01;
+    }
+  });
 
-    const geometry = new THREE.BoxGeometry();
-    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-    const cube = new THREE.Mesh(geometry, material);
-    scene.add(cube);
-
-    camera.position.z = 5;
-
-    const animate = () => {
-      requestAnimationFrame(animate);
-      cube.rotation.x += 0.01;
-      cube.rotation.y += 0.01;
-      renderer.render(scene, camera);
-    };
-
-    animate();
-
-    // Cleanup on component unmount
-    return () => {
-      renderer.dispose();
-      geometry.dispose();
-      material.dispose();
-    };
-  }, []);
+  const handleClick = () => {
+    setColor([Math.random(), Math.random(), Math.random()]);
+  };
 
   return (
-    <div className="App" ref={mountRef}></div>
+    <mesh
+      ref={meshRef}
+      position={[Math.random() * 6 - 3, Math.random() * 6 - 3, Math.random() * 6 - 3]}
+      onClick={handleClick}
+    >
+      <boxGeometry />
+      <meshBasicMaterial color={color} />
+    </mesh>
+  );
+}
+
+function RandomCubes() {
+  return (
+    <>
+      {Array.from({ length: 10 }).map((_, index) => (
+        <RandomColorCube key={index} />
+      ))}
+    </>
+  );
+}
+
+function App() {
+  return (
+    <div className="App">
+      <Canvas style={{ width: '80vw', height: '80vh' }} camera={{ position: [0, 0, 10] }}>
+        <RandomCubes />
+        <ambientLight intensity={0.5} />
+        <directionalLight position={[5, 5, 5]} intensity={1} />
+        <OrbitControls enableDamping />
+      </Canvas>
+    </div>
   );
 }
 
