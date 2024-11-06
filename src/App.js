@@ -1,59 +1,100 @@
-import React, { useRef, useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
-import { Physics, useBox } from '@react-three/cannon'; // Import physics-related components
+import { OrbitControls, Stars } from '@react-three/drei';
+import { Physics, useBox, usePlane } from '@react-three/cannon';
+import { BoxGeometry, PlaneGeometry, MeshStandardMaterial } from 'three';
 import './App.css';
 
-function RandomColorCube({ speed, size, onClick }) {
-  const meshRef = useRef();
-  const [color, setColor] = useState([Math.random(), Math.random(), Math.random()]);
-  const [_, api] = useBox(() => ({ // Destructure api from useBox to set physics properties
-    mass: 1, // Mass of the cube
-    position: [Math.random() * 6 - 3, Math.random() * 6 - 3, Math.random() * 6 - 3], // Random initial position
-    args: [size, size, size], // Size of the box (cube)
+function Floor() {
+  const [ref] = usePlane(() => ({
+    rotation: [-Math.PI / 2, 0, 0],
+    position: [0, -1, 0],
   }));
 
+  const planeGeometry = useMemo(() => new PlaneGeometry(100, 100), []);
+  const planeMaterial = useMemo(() => new MeshStandardMaterial({ color: '#111111' }), []);
+
+  return <mesh ref={ref} receiveShadow geometry={planeGeometry} material={planeMaterial} />;
+}
+
+function useCannonBox({ position }, onCollideCallback) {
+  const [ref, api] = useBox(() => ({
+    mass: 1,
+    position,
+    onCollide: onCollideCallback,
+  }));
+
+  const velocity = useRef([0, 0, 0]);
+  useEffect(() => api.velocity.subscribe((v) => (velocity.current = v)), [api]);
+
+  return [ref, api, velocity.current];
+}
+
+function RandomColorCube({ size, position, onClick }) {
+  const [color, setColor] = useState(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
+  const [scale, setScale] = useState(1);
+  
+  // Change color and scale on collision
+  const onCollide = () => {
+    setColor(`#${Math.floor(Math.random() * 16777215).toString(16)}`);
+    setScale((prevScale) => (Math.random() * 0.5 + 0.75) * prevScale);
+  };
+
+  const [ref, api] = useCannonBox({ position }, onCollide);
+
+  useEffect(() => {
+    const initialVelocity = [
+      (Math.random() - 0.5) * 5,
+      (Math.random() - 0.5) * 5,
+      (Math.random() - 0.5) * 5,
+    ];
+    api.velocity.set(...initialVelocity);
+  }, [api]);
+
+  const cubeGeometry = useMemo(() => new BoxGeometry(size, size, size), [size]);
+  const cubeMaterial = useMemo(() => new MeshStandardMaterial({ color }), [color]);
+
   useFrame(() => {
-    if (meshRef.current) {
-      meshRef.current.rotation.x += 0.01 * speed;
-      meshRef.current.rotation.y += 0.01 * speed;
+    if (ref.current) {
+      ref.current.scale.set(scale, scale, scale);
+      setScale((prev) => prev + (Math.sin(Date.now() * 0.001) * 0.01));
     }
   });
 
-  const handleClick = () => {
-    setColor([Math.random(), Math.random(), Math.random()]);
-    onClick(); // Call the onClick handler passed from the parent component
-  };
-
   return (
     <mesh
-      ref={meshRef}
-      onClick={handleClick}
-    >
-      <boxGeometry />
-      <meshBasicMaterial color={color} />
-      {/* Attach the physical body to the mesh */}
-      <Physics>{/* The body component handles the physics simulation */}
-        <meshPhysicalMaterial ref={api} />
-      </Physics>
-    </mesh>
+      ref={ref}
+      onClick={onClick}
+      castShadow
+      receiveShadow
+      geometry={cubeGeometry}
+      material={cubeMaterial}
+    />
   );
 }
 
 function RandomCubes() {
-  const [cubes, setCubes] = useState(1); // Start with one cube
+  const [cubes, setCubes] = useState(() =>
+    Array.from({ length: 10 }, (_, i) => ({
+      key: i,
+      size: Math.random() * 0.5 + 0.5,
+      position: [Math.random() * 10 - 5, Math.random() * 10 - 5, Math.random() * 10 - 5],
+    }))
+  );
 
-  const handleClick = () => {
-    // There's a 50% chance of adding more cubes when the initial cube is clicked
-    if (Math.random() < 0.5) {
-      setCubes((prevCubes) => prevCubes + 1);
-    }
+  const addCube = () => {
+    const newCube = {
+      key: cubes.length,
+      size: Math.random() * 0.5 + 0.5,
+      position: [Math.random() * 10 - 5, Math.random() * 10 - 5, Math.random() * 10 - 5],
+    };
+    setCubes((prevCubes) => [...prevCubes, newCube]);
   };
 
   return (
     <>
-      {Array.from({ length: cubes }).map((_, index) => (
-        <RandomColorCube key={index} speed={1} size={1} onClick={handleClick} />
+      {cubes.map(({ key, size, position }) => (
+        <RandomColorCube key={key} size={size} position={position} onClick={addCube} />
       ))}
     </>
   );
@@ -62,13 +103,26 @@ function RandomCubes() {
 function App() {
   return (
     <div className="App">
-      <Canvas style={{ width: '80vw', height: '80vh' }} camera={{ position: [0, 0, 10] }}>
-        <Physics>{/* Wrap the scene with the physics simulation */}
+      <Canvas shadows camera={{ position: [0, 5, 15], fov: 60 }} style={{ width: '100vw', height: '100vh' }}>
+        <ambientLight intensity={0.3} />
+        <directionalLight
+          position={[10, 10, 5]}
+          intensity={1}
+          castShadow
+          shadow-mapSize-width={1024}
+          shadow-mapSize-height={1024}
+          shadow-camera-far={50}
+          shadow-camera-left={-10}
+          shadow-camera-right={10}
+          shadow-camera-top={10}
+          shadow-camera-bottom={-10}
+        />
+        <Stars radius={100} depth={50} count={5000} factor={4} fade speed={0.5} />
+        <Physics gravity={[0, -5, 0]}>
+          <Floor />
           <RandomCubes />
-          <ambientLight intensity={0.5} />
-          <directionalLight position={[5, 5, 5]} intensity={1} />
-          <OrbitControls enableDamping />
         </Physics>
+        <OrbitControls enableDamping autoRotate autoRotateSpeed={0.4} />
       </Canvas>
     </div>
   );
